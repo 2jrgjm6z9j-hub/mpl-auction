@@ -15,7 +15,7 @@ jobs:
 
       - name: Extract ZIP
         run: |
-          unzip -o archive.zip -d .
+          unzip -o Archive.zip -d .
           rm archive.zip
 
       - name: Save extracted files
