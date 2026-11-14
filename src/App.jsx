@@ -9,11 +9,16 @@ import Categories from './pages/Categories'
 import Players from './pages/Players'
 import Import from './pages/Import'
 import Preview from './pages/Preview'
+import TeamApp from './pages/Team'
+import AuctionControl from './pages/AuctionControl'
+import Managers from './pages/Managers'
 
 const TABS = [
   ['prep', '📋 Dashboard'],
   ['tournament', '⚙️ Setup & Rules'],
+  ['control', '🎙️ Live Auction'],
   ['teams', '🛡️ Teams'],
+  ['managers', '👥 Manager Logins'],
   ['categories', '🏷️ Categories'],
   ['players', '🏏 Players'],
   ['import', '📥 Import'],
@@ -39,14 +44,15 @@ function AdminGate({ session }) {
       .then(({ data }) => setRole(data?.role || 'none'))
   }, [session.user.id])
   if (role === undefined) return <Spinner />
+  if (role === 'team') return <TeamApp session={session} />
   if (role !== 'admin')
     return (
       <div className="login">
         <div className="card stack">
-          <h1>Not an admin</h1>
+          <h1>No access yet</h1>
           <p className="sub">
-            You are logged in as {session.user.email}, but this account is not set as Admin yet.
-            Run <b>03_make_me_admin.sql</b> in Supabase (see setup guide, Step 3), then log in again.
+            You are logged in as {session.user.email}, but this account is not an Admin or a Team Manager.
+            Admins: run <b>03_make_me_admin.sql</b> in Supabase. Managers: ask the admin to create your login.
           </p>
           <button className="btn block" onClick={() => supabase.auth.signOut()}>Logout</button>
         </div>
@@ -124,7 +130,9 @@ function Shell({ email }) {
           />
         )}
         {!mustCreate && activeTab === 'prep' && <Prep t={t} go={setTab} />}
+        {!mustCreate && activeTab === 'control' && <AuctionControl t={t} />}
         {!mustCreate && activeTab === 'teams' && <Teams t={t} />}
+        {!mustCreate && activeTab === 'managers' && <Managers t={t} />}
         {!mustCreate && activeTab === 'categories' && <Categories t={t} />}
         {!mustCreate && activeTab === 'players' && <Players t={t} />}
         {!mustCreate && activeTab === 'import' && <Import t={t} />}
