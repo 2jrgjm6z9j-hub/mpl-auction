@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { Avatar } from './ui'
+import { positionOf, roundStats } from './lib/rounds'
 import './team.css'
+import './rounds.css'
 
 /* ---------- time helpers ---------- */
 export function remainingMs(auc, offset) {
@@ -22,8 +24,12 @@ export function useAuction(tid) {
   const [bids, setBids] = useState([])
   const [offset, setOffset] = useState(0)
   const [connected, setConnected] = useState(false)
+  const [rounds, setRounds] = useState([])
+  const [roundInfo, setRoundInfo] = useState(null)
   const seq = useRef(0)
   const curPlayer = useRef(null)
+  const lastVersion = useRef(null)
+  const lastBid = useRef('')
 
   const loadCore = useCallback(async () => {
     const [a, c] = await Promise.all([
@@ -45,6 +51,29 @@ export function useAuction(tid) {
     if (b.data) setPurchases(b.data)
   }, [tid])
 
+  // Category rounds: the list of rounds, plus progress of the ACTIVE round
+  // (how many players, which position the player on the block holds).
+  const loadRounds = useCallback(async () => {
+    const { data: rs } = await supabase.from('auction_rounds')
+      .select('*, categories(name)').eq('tournament_id', tid).order('round_order')
+    const list = rs || []
+    setRounds(list)
+    const active = list.find((r) => r.status === 'active')
+    if (!active) { setRoundInfo(null); return }
+    const { data: ps } = await supabase.from('players')
+      .select('id, sort_order, player_code, status, available').eq('round_id', active.id)
+    const rows = ps || []
+    const st = roundStats(rows)
+    const cur = curPlayer.current
+    setRoundInfo({
+      round: active,
+      name: active.categories?.name || active.name,
+      total: st.total,
+      left: st.left,
+      pos: cur ? positionOf(rows, cur).pos : null,
+    })
+  }, [tid])
+
   const loadAuc = useCallback(async () => {
     const my = ++seq.current
     const { data } = await supabase.from('auction_state').select('*').eq('tournament_id', tid).maybeSingle()
@@ -63,10 +92,20 @@ export function useAuction(tid) {
       b = r.data || []
       if (my !== seq.current) return
     }
-    if (pid !== curPlayer.current) { curPlayer.current = pid; setPlayer(p) }
+    const playerChanged = pid !== curPlayer.current
+    if (playerChanged) { curPlayer.current = pid; setPlayer(p) }
     setBids(b)
     setAuc(data)
-  }, [tid])
+    // Refresh round information only when something relevant changed: a new player,
+    // or a version bump that was NOT just a bid (bids bump the version too, and
+    // re-reading the rounds on every bid on every phone would be wasteful).
+    const bidSig = data ? `${data.current_bid}|${data.current_team_id}` : ''
+    const bidChanged = bidSig !== lastBid.current
+    lastBid.current = bidSig
+    const versionChanged = !!data && data.version !== lastVersion.current
+    if (data) lastVersion.current = data.version
+    if (playerChanged || (versionChanged && !bidChanged)) loadRounds()
+  }, [tid, loadRounds])
 
   const syncTime = useCallback(async () => {
     const t0 = Date.now()
@@ -79,7 +118,7 @@ export function useAuction(tid) {
 
   useEffect(() => {
     if (!tid) return
-    loadCore(); loadTeams(); loadAuc(); syncTime()
+    loadCore(); loadTeams(); loadAuc(); loadRounds(); syncTime()
     const f = `tournament_id=eq.${tid}`
     const ch = supabase.channel('mpl-live-' + tid + '-' + Math.random().toString(36).slice(2, 7))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'auction_state', filter: f }, () => loadAuc())
@@ -97,7 +136,7 @@ export function useAuction(tid) {
       clearInterval(poll); clearInterval(slow)
       document.removeEventListener('visibilitychange', vis)
     }
-  }, [tid, loadCore, loadTeams, loadAuc, syncTime])
+  }, [tid, loadCore, loadTeams, loadAuc, loadRounds, syncTime])
 
   // AUTO-SOLD: when the countdown hits zero and someone has bid, any open screen
   // asks the database to finalize. The database allows it only if truly expired,
@@ -111,7 +150,7 @@ export function useAuction(tid) {
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [tid, auc?.version, auc?.status, auc?.timer_end, offset, reload])
 
-  return { t, cats, teams, purchases, auc, player, bids, offset, connected, reload }
+  return { t, cats, teams, purchases, auc, player, bids, offset, connected, reload, rounds, roundInfo }
 }
 
 /* ---------- countdown ---------- */
@@ -127,7 +166,7 @@ export function Countdown({ auc, offset, total }) {
   const cls = auc.status === 'paused' ? 'paused' : s <= 5 ? 'danger' : s <= 10 ? 'warn' : ''
   return (
     <div className={'timer ' + cls}>
-      <div className="timer-num">{auc.status === 'paused' ? '⏸' : s}</div>
+      <div className="timer-num">{auc.status === 'paused' ? 'â¸' : s}</div>
       <div className="timer-bar"><i style={{ width: pct + '%' }} /></div>
     </div>
   )
@@ -144,14 +183,32 @@ export function LiveBoard({ A, myTeamId }) {
   const high = live && auc.current_team_id ? teamById[auc.current_team_id] : null
   const res = auc?.last_result
   const statusText = !auc ? 'NOT STARTED' : auc.status === 'paused' ? 'PAUSED' : auc.status === 'live' ? (live ? 'LIVE AUCTION' : 'WAITING FOR NEXT PLAYER') : auc.status.toUpperCase()
+  const roundsMode = (A.rounds || []).length > 0
+  const ri = A.roundInfo
 
   return (
     <div className="stack">
       <div className="live-status">
         <span className={'live-dot' + (auc?.status === 'live' && live ? ' on' : '')} />
         <b>{statusText}</b>
-        <span className="conn">{connected ? '● online' : '○ reconnecting…'}</span>
+        <span className="conn">{connected ? 'â online' : 'â reconnectingâ¦'}</span>
       </div>
+
+      {roundsMode && (
+        <div className={'round-banner' + (ri ? '' : ' none')}>
+          {ri ? (
+            <>
+              <span className="rb-tag">ROUND</span>
+              <b>{ri.name}</b>
+              <span className="rb-pos">
+                {live && ri.pos ? `Player ${ri.pos} of ${ri.total}` : `${ri.left} left of ${ri.total}`}
+              </span>
+            </>
+          ) : (
+            <span>No category round is active right now</span>
+          )}
+        </div>
+      )}
 
       {live ? (
         <div className="hero">
@@ -169,7 +226,7 @@ export function LiveBoard({ A, myTeamId }) {
             <div className="hero-grid">
               <div><small>BASE PRICE</small><b>{player.base_price}</b></div>
               <div><small>CURRENT BID</small>
-                <b key={auc.current_bid ?? 'none'} className="bid-big flash">{auc.current_bid ?? '—'}</b></div>
+                <b key={auc.current_bid ?? 'none'} className="bid-big flash">{auc.current_bid ?? 'â'}</b></div>
             </div>
             <div className={'highest' + (high && high.id === myTeamId ? ' mine' : '')}>
               {high ? (<><Avatar src={high.logo_url} name={high.name} size={34} round={false} />
@@ -220,7 +277,7 @@ export function LiveBoard({ A, myTeamId }) {
 
 function ResultCard({ res }) {
   if (!res) return (
-    <div className="card result wait"><div className="empty-icon">🏏</div><h3>Waiting for the next player…</h3><p className="sub">The auctioneer will bring the next player soon.</p></div>
+    <div className="card result wait"><div className="empty-icon">ð</div><h3>Waiting for the next playerâ¦</h3><p className="sub">The auctioneer will bring the next player soon.</p></div>
   )
   const sold = res.status === 'sold'
   return (
@@ -230,7 +287,7 @@ function ResultCard({ res }) {
       <h3>{res.player_name}</h3>
       {sold ? <p className="res-line">to <b>{res.team_name}</b> for <b className="price">{res.amount}</b> credits</p>
         : <p className="sub">{res.status === 'unsold' ? 'No team bought this player.' : 'Skipped for now. May return later.'}</p>}
-      <p className="sub">Waiting for the next player…</p>
+      <p className="sub">Waiting for the next playerâ¦</p>
     </div>
   )
 }
