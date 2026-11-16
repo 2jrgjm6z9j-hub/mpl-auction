@@ -12,10 +12,12 @@ import Preview from './pages/Preview'
 import TeamApp from './pages/Team'
 import AuctionControl from './pages/AuctionControl'
 import Managers from './pages/Managers'
+import Rounds from './pages/Rounds'
 
 const TABS = [
   ['prep', '📋 Dashboard'],
   ['tournament', '⚙️ Setup & Rules'],
+  ['rounds', '🔁 Rounds'],
   ['control', '🎙️ Live Auction'],
   ['teams', '🛡️ Teams'],
   ['managers', '👥 Manager Logins'],
@@ -130,6 +132,7 @@ function Shell({ email }) {
           />
         )}
         {!mustCreate && activeTab === 'prep' && <Prep t={t} go={setTab} />}
+        {!mustCreate && activeTab === 'rounds' && <Rounds t={t} />}
         {!mustCreate && activeTab === 'control' && <AuctionControl t={t} />}
         {!mustCreate && activeTab === 'teams' && <Teams t={t} />}
         {!mustCreate && activeTab === 'managers' && <Managers t={t} />}
