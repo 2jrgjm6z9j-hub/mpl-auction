@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
-import { Avatar } from './ui'
+import { Avatar, PlayerPhoto, Tag } from './ui'
+import { Icon } from './icons'
+import { Ring } from './charts'
+import { teamTheme } from './theme'
+import { DOT, ELLIPSIS } from './lib/text'
 import { positionOf, roundStats } from './lib/rounds'
 import './team.css'
 import './rounds.css'
@@ -154,7 +158,7 @@ export function useAuction(tid) {
 }
 
 /* ---------- countdown ---------- */
-export function Countdown({ auc, offset, total }) {
+export function Countdown({ auc, offset, total, size = 138 }) {
   const [, tick] = useState(0)
   useEffect(() => {
     const id = setInterval(() => tick((n) => n + 1), 200)
@@ -162,132 +166,195 @@ export function Countdown({ auc, offset, total }) {
   }, [])
   const ms = remainingMs(auc, offset)
   const s = Math.ceil(ms / 1000)
-  const pct = Math.min(100, (ms / (Math.max(total, 1) * 1000)) * 100)
-  const cls = auc.status === 'paused' ? 'paused' : s <= 5 ? 'danger' : s <= 10 ? 'warn' : ''
+  const paused = auc.status === 'paused'
+  const tone = paused ? 'paused' : s <= 5 ? 'danger' : s <= 10 ? 'warn' : 'ok'
+  const colors = {
+    ok: ['#2ee6a6', '#35e0ff'], warn: ['#ffd25e', '#ff9a1f'], danger: ['#ff7a8c', '#ff2d55'], paused: ['#7d86ad', '#4b5378'],
+  }[tone]
   return (
-    <div className={'timer ' + cls}>
-      <div className="timer-num">{auc.status === 'paused' ? 'â¸' : s}</div>
-      <div className="timer-bar"><i style={{ width: pct + '%' }} /></div>
+    <div className={'timer ' + tone}>
+      <Ring value={ms} max={Math.max(total, 1) * 1000} size={size} stroke={11} from={colors[0]} to={colors[1]}>
+        {paused
+          ? <span className="timer-paused"><Icon name="pause" size={34} stroke={2.2} /><small>Paused</small></span>
+          : <span className="timer-in"><b>{s}</b><small>sec</small></span>}
+      </Ring>
     </div>
   )
 }
 
 /* ---------- main live board (used by managers AND admin) ---------- */
-export function LiveBoard({ A, myTeamId }) {
+export function LiveBoard({ A, myTeamId, after }) {
   const { t, auc, player, bids, teams, purchases, offset, connected } = A
-  if (!t) return <div className="spinner" />
+  if (!t) return <div className="loader"><i /><i /><i /></div>
   const teamById = Object.fromEntries(teams.map((x) => [x.id, x]))
   const counts = {}
   purchases.forEach((p) => (counts[p.team_id] = (counts[p.team_id] || 0) + 1))
   const live = !!(auc && player && auc.current_player_id)
   const high = live && auc.current_team_id ? teamById[auc.current_team_id] : null
   const res = auc?.last_result
-  const statusText = !auc ? 'NOT STARTED' : auc.status === 'paused' ? 'PAUSED' : auc.status === 'live' ? (live ? 'LIVE AUCTION' : 'WAITING FOR NEXT PLAYER') : auc.status.toUpperCase()
+  const paused = auc?.status === 'paused'
   const roundsMode = (A.rounds || []).length > 0
   const ri = A.roundInfo
+  const mine = !!(high && high.id === myTeamId)
 
   return (
-    <div className="stack">
-      <div className="live-status">
-        <span className={'live-dot' + (auc?.status === 'live' && live ? ' on' : '')} />
-        <b>{statusText}</b>
-        <span className="conn">{connected ? 'â online' : 'â reconnectingâ¦'}</span>
+    <div className="lb">
+      <div className="lb-status">
+        {!auc ? <Tag tone="violet">Not started</Tag>
+          : paused ? <Tag tone="gold">Paused</Tag>
+            : auc.status === 'live' ? (live ? <Tag tone="live">Live auction</Tag> : <Tag tone="violet">Waiting for next player</Tag>)
+              : <Tag tone="violet">{String(auc.status).toUpperCase()}</Tag>}
+        <span className={'conn' + (connected ? ' on' : '')}><i />{connected ? 'Online' : 'Reconnecting' + ELLIPSIS}</span>
       </div>
 
       {roundsMode && (
-        <div className={'round-banner' + (ri ? '' : ' none')}>
+        <div className={'round-chip' + (ri ? '' : ' none')}>
+          <Icon name="layers" size={18} />
           {ri ? (
             <>
-              <span className="rb-tag">ROUND</span>
-              <b>{ri.name}</b>
-              <span className="rb-pos">
-                {live && ri.pos ? `Player ${ri.pos} of ${ri.total}` : `${ri.left} left of ${ri.total}`}
-              </span>
+              <span className="rc-cat">{ri.name} round</span>
+              <span className="rc-pos">{live && ri.pos ? `Player ${ri.pos} of ${ri.total}` : `${ri.left} left of ${ri.total}`}</span>
+              <span className="rc-bar"><i style={{ width: (ri.total ? ((ri.total - ri.left - (live ? 1 : 0)) / ri.total) * 100 : 0) + '%' }} /></span>
             </>
           ) : (
-            <span>No category round is active right now</span>
+            <span className="rc-cat">No category round is active</span>
           )}
         </div>
       )}
 
       {live ? (
-        <div className="hero">
-          <div className="hero-photo">
-            {player.photo_url ? <img src={player.photo_url} alt={player.full_name} /> : <div className="hero-ph">{player.full_name.slice(0, 1)}</div>}
-            <span className="hero-code">{player.player_code}</span>
+        <section className="lb-hero" style={teamTheme(player.categories?.name || 'x')}>
+          <div className="lb-photo">
+            <PlayerPhoto src={player.photo_url} name={player.full_name} />
+            <div className="lb-shade" />
+            <div className="lb-top"><span className="code">{player.player_code}</span></div>
+            <div className="lb-id">
+              {player.categories?.name && <Tag tone="violet" dot={false}>{player.categories.name}</Tag>}
+              <h2 className="lb-name">{player.full_name}</h2>
+              <div className="lb-sub">{[player.playing_role, player.city].filter(Boolean).join(' ' + DOT + ' ')}</div>
+            </div>
           </div>
-          <div className="hero-info">
-            <div className="hero-name">{player.full_name}</div>
-            <div className="hero-tags">
-              {player.categories?.name && <span className="badge gold">{player.categories.name}</span>}
-              {player.playing_role && <span className="badge">{player.playing_role}</span>}
-              {player.city && <span className="badge">{player.city}</span>}
-            </div>
-            <div className="hero-grid">
-              <div><small>BASE PRICE</small><b>{player.base_price}</b></div>
-              <div><small>CURRENT BID</small>
-                <b key={auc.current_bid ?? 'none'} className="bid-big flash">{auc.current_bid ?? 'â'}</b></div>
-            </div>
-            <div className={'highest' + (high && high.id === myTeamId ? ' mine' : '')}>
-              {high ? (<><Avatar src={high.logo_url} name={high.name} size={34} round={false} />
-                <div><small>HIGHEST BIDDER</small><b>{high.name}{high.id === myTeamId ? ' (YOU)' : ''}</b></div></>)
-                : <div><small>HIGHEST BIDDER</small><b>No bids yet</b></div>}
-            </div>
+          <div className="lb-deck">
             <Countdown auc={auc} offset={offset} total={Math.max(t.timer_seconds, t.timer_reset_seconds)} />
+            <div className="lb-bidbox">
+              <small>Current bid</small>
+              <b key={auc.current_bid ?? 'none'} className={'lb-bid' + (auc.current_bid == null ? ' none' : ' flash')}>{auc.current_bid ?? player.base_price}</b>
+              <span className="lb-base">{auc.current_bid == null ? 'Opening at base price' : 'Base price ' + player.base_price}</span>
+            </div>
           </div>
-        </div>
+          <div className={'lb-high' + (high ? ' has' : '') + (mine ? ' mine' : '')} style={high ? teamTheme(high.name) : undefined}>
+            {high ? (
+              <>
+                <Avatar src={high.logo_url} name={high.name} size={44} round={false} />
+                <div className="grow"><small>Highest bidder</small><b>{high.name}{mine ? ' (you)' : ''}</b></div>
+                <Icon name="trophy" size={22} />
+              </>
+            ) : (
+              <>
+                <span className="lb-high-ic"><Icon name="gavel" size={20} /></span>
+                <div className="grow"><small>Highest bidder</small><b>No bids yet</b></div>
+              </>
+            )}
+          </div>
+        </section>
       ) : (
-        <ResultCard res={res} />
+        <ResultCard res={res} teams={teams} />
       )}
 
-      <div className="card">
-        <h3>Teams</h3>
-        <div className="team-grid">
+      {after}
+
+      <section className="surface lb-teams">
+        <div className="sec-h"><span className="sec-ic violet"><Icon name="shield" size={22} /></span><div><h3>Teams</h3><p>Remaining credits and squad size</p></div></div>
+        <div className="tiles">
           {teams.map((tm) => {
             const left = Number(tm.purse) - Number(tm.spent)
             const isHigh = live && auc.current_team_id === tm.id
+            const n = counts[tm.id] || 0
             return (
-              <div key={tm.id} className={'team-card' + (isHigh ? ' high' : '') + (tm.id === myTeamId ? ' me' : '')}>
-                <Avatar src={tm.logo_url} name={tm.name} size={40} round={false} />
-                <div className="tc-name">{tm.name}</div>
-                <div className="tc-credits">{left}<small> cr</small></div>
-                <div className="tc-meta">{counts[tm.id] || 0}/{t.max_squad} players</div>
-                {isHigh && <div className="tc-flag">HIGHEST BID</div>}
+              <div key={tm.id} className={'tile' + (isHigh ? ' high' : '') + (tm.id === myTeamId ? ' me' : '')} style={teamTheme(tm.name)}>
+                {isHigh && <span className="tile-flag">Leading</span>}
+                <Avatar src={tm.logo_url} name={tm.name} size={42} round={false} />
+                <div className="tile-name">{tm.name}</div>
+                <div className="tile-cr"><b>{left}</b><small>credits</small></div>
+                <div className="tile-bar"><i style={{ width: Math.min(100, (n / Math.max(1, t.max_squad)) * 100) + '%' }} /></div>
+                <div className="tile-meta">{n}/{t.max_squad} players</div>
               </div>
             )
           })}
         </div>
-      </div>
+      </section>
 
       {live && (
-        <div className="card">
-          <h3>Bid History</h3>
-          {bids.length === 0 ? <p className="sub">No bids yet.</p> : bids.map((b, i) => (
-            <div className={'bid-row' + (i === 0 ? ' top' : '')} key={b.id}>
-              <span>{teamById[b.team_id]?.name || 'Team'}</span>
-              <b>{b.amount} cr</b>
-              <small>{new Date(b.created_at).toLocaleTimeString()}</small>
+        <section className="surface">
+          <div className="sec-h"><span className="sec-ic"><Icon name="bolt" size={22} /></span><div><h3>Bid history</h3><p>{bids.length} bid{bids.length === 1 ? '' : 's'} for this player</p></div></div>
+          {bids.length === 0 ? <p className="sub">No bids yet. The first bid sets the pace.</p> : (
+            <div className="feed">
+              {bids.map((b, i) => {
+                const tm = teamById[b.team_id]
+                return (
+                  <div className={'feed-row' + (i === 0 ? ' top' : '')} key={b.id} style={tm ? teamTheme(tm.name) : undefined}>
+                    <span className="feed-dot" />
+                    <span className="feed-team ell">{tm?.name || 'Team'}</span>
+                    <b className="feed-amt">{b.amount}</b>
+                    <small>{new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small>
+                  </div>
+                )
+              })}
             </div>
-          ))}
-        </div>
+          )}
+        </section>
       )}
     </div>
   )
 }
 
-function ResultCard({ res }) {
+const CONFETTI = ['#ffc53d', '#2ee6a6', '#35e0ff', '#8b6cff', '#ff5d7a', '#ff9a1f']
+function Confetti() {
+  return (
+    <div className="confetti" aria-hidden="true">
+      {Array.from({ length: 28 }, (_, i) => {
+        const a = ((i * 137.5) % 360) * (Math.PI / 180)
+        return (
+          <i key={i} style={{
+            '--dx': Math.round(Math.cos(a) * (80 + (i % 5) * 38)) + 'px',
+            '--dy': Math.round(Math.sin(a) * (60 + (i % 4) * 30) - 70) + 'px',
+            '--rot': ((i * 53) % 360) + 'deg', '--d': (i % 7) * 45 + 'ms', background: CONFETTI[i % CONFETTI.length],
+          }} />
+        )
+      })}
+    </div>
+  )
+}
+
+function ResultCard({ res, teams }) {
   if (!res) return (
-    <div className="card result wait"><div className="empty-icon">ð</div><h3>Waiting for the next playerâ¦</h3><p className="sub">The auctioneer will bring the next player soon.</p></div>
+    <section className="res res-wait">
+      <span className="res-wait-ic"><Icon name="gavel" size={34} /></span>
+      <h3>Waiting for the next player</h3>
+      <p>The auctioneer will bring the next player to the block shortly.</p>
+    </section>
   )
   const sold = res.status === 'sold'
+  const team = sold ? (teams || []).find((x) => x.id === res.team_id) : null
+  const label = sold ? 'Sold' : res.status === 'unsold' ? 'Unsold' : 'Skipped'
   return (
-    <div className={'card result ' + res.status}>
-      <div className="res-stamp">{sold ? 'SOLD' : res.status === 'unsold' ? 'UNSOLD' : 'SKIPPED'}</div>
-      {res.photo_url && <img className="res-photo" src={res.photo_url} alt="" />}
-      <h3>{res.player_name}</h3>
-      {sold ? <p className="res-line">to <b>{res.team_name}</b> for <b className="price">{res.amount}</b> credits</p>
-        : <p className="sub">{res.status === 'unsold' ? 'No team bought this player.' : 'Skipped for now. May return later.'}</p>}
-      <p className="sub">Waiting for the next playerâ¦</p>
-    </div>
+    <section className={'res res-' + res.status} key={res.at || res.player_id} style={team ? teamTheme(team.name) : undefined}>
+      {sold && <Confetti />}
+      <div className="res-glow" />
+      <div className="res-stamp">{label}</div>
+      <div className="res-player">
+        {res.photo_url ? <img className="res-photo" src={res.photo_url} alt="" /> : <span className="res-photo res-photo-empty"><Icon name="user" size={40} stroke={1.3} /></span>}
+        <div><h3>{res.player_name}</h3><small>{res.player_code}</small></div>
+      </div>
+      {sold ? (
+        <div className="res-deal">
+          <Avatar src={team?.logo_url} name={res.team_name} size={46} round={false} />
+          <div className="grow"><small>Sold to</small><b>{res.team_name}</b></div>
+          <div className="res-price"><b>{res.amount}</b><small>credits</small></div>
+        </div>
+      ) : (
+        <p className="res-note">{res.status === 'unsold' ? 'No team bought this player.' : 'Skipped for now. The player may return later.'}</p>
+      )}
+    </section>
   )
 }
