@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
-import { Avatar, Empty, Field, Modal, Spinner, useToast } from '../ui'
+import { Avatar, Empty, Field, Modal, PageHead, Spinner, Tag, useToast } from '../ui'
+import { Icon } from '../icons'
+import { Ring } from '../charts'
+import { teamTheme } from '../theme'
+import { DOT, ELLIPSIS } from '../lib/text'
 
 async function callApi(body) {
   const { data: { session } } = await supabase.auth.getSession()
@@ -74,27 +78,31 @@ export default function Managers({ t }) {
   if (!teams) return <Spinner />
   const done = teams.filter((x) => x.user_id).length
   return (
-    <div>
-      <div className="page-head">
-        <div><h2>Team Manager Logins</h2><p className="sub">{done} of {teams.length} teams have a manager login</p></div>
-      </div>
-      {teams.length === 0 ? <Empty icon="🛡️" title="No teams" text="Add teams first on the Teams tab." /> : (
+    <>
+      <PageHead title="Manager logins" sub="One secure login per team manager">
+        <Ring value={done} max={Math.max(1, teams.length)} size={64} stroke={7} from="#2ee6a6" to="#35e0ff">
+          <b className="num" style={{ fontSize: 19 }}>{done}/{teams.length}</b>
+        </Ring>
+      </PageHead>
+
+      {teams.length === 0 ? <Empty icon="shield" title="No teams" text="Add teams first on the Teams screen." /> : (
         <div className="grid g2">
-          {teams.map((tm) => (
-            <div key={tm.id} className="item">
-              <Avatar src={tm.logo_url} name={tm.name} size={48} round={false} />
+          {teams.map((tm, i) => (
+            <div key={tm.id} className="item mgr" style={{ ...teamTheme(tm.name), '--i': i }}>
+              <Avatar src={tm.logo_url} name={tm.name} size={52} round={false} />
               <div className="grow">
-                <div className="name">{tm.name}</div>
-                <div className="meta">{tm.user_id ? '✅ ' + (tm.manager_email || 'login created') : '⚠️ No login yet'}</div>
+                <div className="name ell">{tm.name}</div>
+                <div className="meta ell">{tm.user_id ? (tm.manager_email || 'login created') : 'No login yet'}</div>
+                <div style={{ marginTop: 8 }}>{tm.user_id ? <Tag tone="mint">Active</Tag> : <Tag tone="coral">Missing</Tag>}</div>
               </div>
               <div className="actions">
                 {tm.user_id ? (
                   <>
-                    <button className="btn small ghost" onClick={() => setEdit({ team: tm, mode: 'reset', password: genPassword() })}>Password</button>
-                    <button className="btn small danger" onClick={() => remove(tm)}>✕</button>
+                    <button className="btn soft sm" onClick={() => setEdit({ team: tm, mode: 'reset', password: genPassword() })}><Icon name="key" size={16} /> Password</button>
+                    <button className="btn icon sm danger" aria-label="Remove login" onClick={() => remove(tm)}><Icon name="trash" size={16} /></button>
                   </>
                 ) : (
-                  <button className="btn small" onClick={() => setEdit({ team: tm, mode: 'create', email: '', password: genPassword() })}>Create</button>
+                  <button className="btn sm" onClick={() => setEdit({ team: tm, mode: 'create', email: '', password: genPassword() })}><Icon name="plus" size={16} stroke={2.4} /> Create</button>
                 )}
               </div>
             </div>
@@ -103,41 +111,47 @@ export default function Managers({ t }) {
       )}
 
       {edit && (
-        <Modal title={(edit.mode === 'create' ? 'Create login · ' : 'New password · ') + edit.team.name} onClose={() => setEdit(null)}>
+        <Modal title={(edit.mode === 'create' ? 'Create login ' : 'New password ') + DOT + ' ' + edit.team.name} onClose={() => setEdit(null)}>
           <form className="stack" onSubmit={edit.mode === 'create' ? create : reset}>
             {edit.mode === 'create' && (
               <Field label="Manager email" hint="Used to log in. Use the manager's own email.">
-                <input type="email" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} required autoFocus />
+                <div className="search">
+                  <Icon name="mail" size={18} />
+                  <input type="email" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} required autoFocus />
+                </div>
               </Field>
             )}
             <Field label="Password" hint="At least 6 characters. Tap Generate for a random one.">
               <div className="row">
                 <input type="text" value={edit.password} onChange={(e) => setEdit({ ...edit, password: e.target.value })} required minLength={6} />
-                <button type="button" className="btn small ghost" onClick={() => setEdit({ ...edit, password: genPassword() })}>Generate</button>
+                <button type="button" className="btn soft" onClick={() => setEdit({ ...edit, password: genPassword() })}><Icon name="refresh" size={17} /></button>
               </div>
             </Field>
             <div className="modal-foot">
               <button type="button" className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
-              <button className="btn" disabled={busy}>{busy ? 'Please wait…' : edit.mode === 'create' ? 'Create login' : 'Set password'}</button>
+              <button className="btn" disabled={busy}>{busy ? 'Please wait' + ELLIPSIS : edit.mode === 'create' ? 'Create login' : 'Set password'}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {made && (
-        <Modal title="Login ready ✅" onClose={() => setMade(null)}>
+        <Modal title="Login ready" onClose={() => setMade(null)}>
           <div className="stack">
-            <div className="card">
-              <p><b>Team:</b> {made.team}</p>
-              <p><b>Email:</b> {made.email}</p>
-              <p><b>Password:</b> {made.password}</p>
+            <div className="pass" style={teamTheme(made.team)}>
+              <div className="row">
+                <Avatar src={(teams.find((x) => x.name === made.team) || {}).logo_url} name={made.team} size={54} round={false} />
+                <div><div className="eyebrow">Team access pass</div><div className="pass-team">{made.team}</div></div>
+              </div>
+              <div className="pass-row"><span>Email</span><b className="ell">{made.email}</b></div>
+              <div className="pass-row"><span>Password</span><b className="mono">{made.password}</b></div>
             </div>
-            <p className="sub">The password is shown only now. Send it to the manager (WhatsApp / SMS) before closing.</p>
-            <button className="btn block" onClick={() => share(made)}>📤 Share / Copy login details</button>
+            <div className="banner info"><Icon name="info" size={18} /><span>The password is shown only now. Send it to the manager (WhatsApp / SMS) before closing.</span></div>
+            <button className="btn block lg" onClick={() => share(made)}><Icon name="share" size={19} /> Share / copy login details</button>
             <button className="btn ghost block" onClick={() => setMade(null)}>Done</button>
           </div>
         </Modal>
       )}
-    </div>
+    </>
   )
 }

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
-import { Avatar, Spinner } from '../ui'
+import { Avatar, Empty, PageHead, PlayerPhoto, Seg, Spinner, Tag } from '../ui'
+import { teamTheme } from '../theme'
 import { fetchAll } from '../lib/util'
+import { DOT, DASH } from '../lib/text'
 
 export default function Preview({ t }) {
   const [teams, setTeams] = useState(null)
@@ -24,46 +26,49 @@ export default function Preview({ t }) {
   const list = players.filter((p) => !cat || p.category_id === cat)
 
   return (
-    <div>
-      <div className="page-head">
-        <div><h2>Preview</h2><p className="sub">How teams and players will appear in the auction.</p></div>
-        <div className="row">
-          <button className={'btn small' + (view === 'teams' ? '' : ' ghost')} onClick={() => setView('teams')}>Teams</button>
-          <button className={'btn small' + (view === 'players' ? '' : ' ghost')} onClick={() => setView('players')}>Players</button>
-        </div>
-      </div>
+    <>
+      <PageHead title="Preview" sub="How teams and players will appear in the auction.">
+        <Seg value={view} onChange={setView} options={[{ value: 'teams', label: 'Teams', icon: 'shield' }, { value: 'players', label: 'Players', icon: 'user' }]} />
+      </PageHead>
 
       {view === 'teams' ? (
-        <div className="grid g3">
-          {teams.map((tm) => (
-            <div key={tm.id} className="pcard" style={{ padding: 14 }}>
-              <Avatar src={tm.logo_url} name={tm.name} size={84} round={false} />
-              <div className="pn">{tm.name}</div>
-              <div className="price">{tm.purse}</div>
-              <small>credits</small>
-            </div>
-          ))}
-        </div>
+        teams.length === 0 ? <Empty icon="shield" title="No teams yet" text="Add teams to see them here." /> : (
+          <div className="grid g3">
+            {teams.map((tm, i) => (
+              <div key={tm.id} className="tcard pv-team" style={{ ...teamTheme(tm.name), '--i': i }}>
+                <Avatar src={tm.logo_url} name={tm.name} size={84} round={false} />
+                <div className="tname">{tm.name}</div>
+                <div className="pv-purse"><b>{tm.purse}</b><small>credits</small></div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <>
           <div className="toolbar">
-            <select value={cat} onChange={(e) => setCat(e.target.value)}>
+            <select aria-label="Category" value={cat} onChange={(e) => setCat(e.target.value)}>
               <option value="">All categories ({players.length})</option>
               {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div className="grid g3">
-            {list.map((p) => (
-              <div key={p.id} className="pcard">
-                {p.photo_url ? <img className="ph-big" src={p.photo_url} alt={p.full_name} /> : <div className="ph-big">{p.full_name.slice(0, 1)}</div>}
-                <div className="pn">{p.full_name}</div>
-                <small>{p.player_code} · {p.categories?.name || '—'}</small>
-                <div className="price">Base {p.base_price}</div>
-              </div>
-            ))}
-          </div>
+          {list.length === 0 ? <Empty icon="user" title="No players" text="Nothing matches this category." /> : (
+            <div className="pgrid">
+              {list.map((p, i) => (
+                <div key={p.id} className="pcard" style={{ ...teamTheme(p.categories?.name || 'none'), '--i': Math.min(i, 14) }}>
+                  <PlayerPhoto src={p.photo_url} name={p.full_name} />
+                  <div className="tl"><span className="code">{p.player_code}</span></div>
+                  <div className="meta">
+                    <Tag tone="violet" dot={false}>{p.categories?.name || DASH}</Tag>
+                    <div className="pname">{p.full_name}</div>
+                    <div className="pmini ell">{[p.playing_role, p.city].filter(Boolean).join(' ' + DOT + ' ') || 'No details yet'}</div>
+                    <div className="pbase"><div><small>Base</small><b className="pprice">{p.base_price}</b></div></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
-    </div>
+    </>
   )
 }

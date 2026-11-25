@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
-import { Field, useToast } from '../ui'
+import { Field, PageHead, useToast } from '../ui'
+import { Icon } from '../icons'
 import { fetchAll, friendlyError, nextCodes } from '../lib/util'
+import { DASH, ELLIPSIS } from '../lib/text'
 
 const ALIASES = {
   player_code: ['player_id', 'playerid', 'id', 'code', 'player_code'],
@@ -108,50 +110,62 @@ export default function Import({ t }) {
   }
 
   return (
-    <div className="stack">
-      <div className="page-head"><div><h2>Bulk Import</h2><p className="sub">Add many players at once from Excel or CSV.</p></div></div>
+    <>
+      <PageHead title="Bulk import" sub="Add many players at once from Excel or CSV." />
 
-      <div className="card stack">
-        <h3>Step 1 · Download the template</h3>
-        <p className="sub">Open it in Excel, fill your players, keep the column names. Photos are added later from the Players page.</p>
-        <button className="btn ghost" onClick={template}>⬇ Download CSV template</button>
+      <div className="surface imp-step">
+        <span className="imp-n">1</span>
+        <div className="grow">
+          <h3>Download the template</h3>
+          <p className="sub">Open it in Excel, fill your players, keep the column names. Photos are added later from the Players screen.</p>
+          <button className="btn soft" style={{ marginTop: 14 }} onClick={template}><Icon name="download" size={18} /> Download CSV template</button>
+        </div>
       </div>
 
-      <div className="card stack">
-        <h3>Step 2 · Choose your file</h3>
-        <Field label="Base price for rows without a price"><input type="number" min="0.5" step="any" value={defPrice} onChange={(e) => setDefPrice(e.target.value)} /></Field>
-        <label className="btn">
-          📂 Choose .xlsx / .xls / .csv file
-          <input type="file" accept=".xlsx,.xls,.csv" hidden onChange={onFile} />
-        </label>
+      <div className="surface imp-step page-sec">
+        <span className="imp-n">2</span>
+        <div className="grow stack">
+          <div><h3>Choose your file</h3><p className="sub">Excel (.xlsx, .xls) or CSV. Unknown categories are created automatically.</p></div>
+          <Field label="Base price for rows without a price"><input type="number" min="0.5" step="any" value={defPrice} onChange={(e) => setDefPrice(e.target.value)} /></Field>
+          <label className="drop">
+            <span className="drop-ic"><Icon name="upload" size={26} /></span>
+            <b>Tap to choose a file</b>
+            <small>.xlsx, .xls or .csv</small>
+            <input type="file" accept=".xlsx,.xls,.csv" hidden onChange={onFile} />
+          </label>
+        </div>
       </div>
 
       {rows && (
-        <div className="card stack">
-          <h3>Step 3 · Check & import ({rows.length} players)</h3>
-          <div className="scroll-x" style={{ maxHeight: 320, overflowY: 'auto' }}>
-            <table className="tbl">
-              <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>City</th><th>Age</th></tr></thead>
-              <tbody>
-                {rows.slice(0, 100).map((r, i) => (
-                  <tr key={i}><td>{i + 1}</td><td>{r.full_name}</td><td>{r.category || '—'}</td><td>{r.base_price || defPrice}</td><td>{r.city || '—'}</td><td>{r.age || '—'}</td></tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="surface imp-step page-sec">
+          <span className="imp-n">3</span>
+          <div className="grow stack">
+            <div><h3>Check and import</h3><p className="sub">{rows.length} players found</p></div>
+            <div className="scroll-x tbl-wrap">
+              <table className="tbl">
+                <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>City</th><th>Age</th></tr></thead>
+                <tbody>
+                  {rows.slice(0, 100).map((r, i) => (
+                    <tr key={i}><td>{i + 1}</td><td>{r.full_name}</td><td>{r.category || DASH}</td><td>{r.base_price || defPrice}</td><td>{r.city || DASH}</td><td>{r.age || DASH}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rows.length > 100 && <p className="sub">Showing first 100 rows only.</p>}
+            <button className="btn block lg" onClick={run} disabled={busy}>
+              <Icon name="check" size={19} stroke={2.4} />{busy ? 'Importing' + ELLIPSIS : `Import ${rows.length} players`}
+            </button>
           </div>
-          {rows.length > 100 && <p className="sub">Showing first 100 rows only.</p>}
-          <button className="btn block" onClick={run} disabled={busy}>{busy ? 'Importing…' : `Import ${rows.length} players`}</button>
         </div>
       )}
 
       {done && (
-        <div className="card stack">
-          <h3>Import finished</h3>
-          <p>✅ {done.added} players added.</p>
+        <div className="surface page-sec">
+          <div className="sec-h"><span className="sec-ic mint"><Icon name="checkc" size={22} /></span><div><h3>Import finished</h3><p>{done.added} players added</p></div></div>
           {done.newCats.length > 0 && <p className="sub">New categories created: {done.newCats.join(', ')}</p>}
-          {done.skipped.length > 0 && <div className="err-text">Skipped {done.skipped.length}: {done.skipped.slice(0, 10).join('; ')}</div>}
+          {done.skipped.length > 0 && <div className="banner" style={{ marginTop: 12 }}><Icon name="alert" size={18} /><span>Skipped {done.skipped.length}: {done.skipped.slice(0, 10).join('; ')}</span></div>}
         </div>
       )}
-    </div>
+    </>
   )
 }

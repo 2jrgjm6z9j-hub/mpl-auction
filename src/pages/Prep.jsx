@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
-import { Spinner } from '../ui'
+import { Spinner, Stat, Tag, Avatar } from '../ui'
+import { Icon, Logo } from '../icons'
+import { Ring, Donut, Legend, Bars } from '../charts'
 import { fetchAll } from '../lib/util'
+import { DOT, TIMES, DASH } from '../lib/text'
+
+const PALETTE = ['#ffc53d', '#8b6cff', '#2ee6a6', '#ff5d7a', '#35e0ff', '#ff9a1f', '#4c8dff', '#ff4fa3']
 
 export default function Prep({ t, go }) {
   const [d, setD] = useState(null)
@@ -34,61 +39,88 @@ export default function Prep({ t, go }) {
     [noCat === 0 && players.length > 0, noCat ? `${noCat} players have no category` : 'All players have a category', 'players', true],
     [noPhoto === 0 && players.length > 0, noPhoto ? `${noPhoto} players have no photo` : 'All players have photos', 'players', false],
     [minSum <= t.max_squad, `Category minimums total ${minSum} (squad size ${t.max_squad})`, 'categories', true],
-    [t.max_squad * t.min_player_price <= t.total_purse, `Purse ${t.total_purse} covers ${t.max_squad} × ${t.min_player_price} minimum`, 'tournament', true],
+    [t.max_squad * t.min_player_price <= t.total_purse, `Purse ${t.total_purse} covers ${t.max_squad} ${TIMES} ${t.min_player_price} minimum`, 'tournament', true],
     [(t.bid_increments || []).length > 0, `Bid increments: ${(t.bid_increments || []).join(', ')}`, 'tournament', true],
   ]
   const okCount = checks.filter((c) => c[0]).length
   const critical = checks.filter((c) => c[3] && !c[0]).length
   const pct = Math.round((okCount / checks.length) * 100)
+  const firstBad = checks.find((c) => c[3] && !c[0]) || checks.find((c) => !c[0])
+
+  const perCat = cats.map((c, i) => ({
+    c,
+    n: players.filter((p) => p.category_id === c.id).length,
+    color: PALETTE[i % PALETTE.length],
+  }))
+  const state = critical ? { tone: 'coral', label: 'Not ready' } : pct === 100 ? { tone: 'mint', label: 'Ready to auction' } : { tone: 'gold', label: 'Almost ready' }
 
   return (
-    <div className="stack">
-      <div className="page-head">
-        <div><h2>Auction Preparation</h2><p className="sub">{t.name} · Season {t.season || '—'}</p></div>
-        <span className={'badge ' + (critical ? 'err' : pct === 100 ? 'ok' : 'warn')}>
-          {critical ? 'Not ready' : pct === 100 ? 'Ready to auction' : 'Almost ready'}
-        </span>
+    <>
+      <div className="surface glow hero-card">
+        <div className="hc-main">
+          <div className="eyebrow">Auction preparation</div>
+          <h2>{t.name}</h2>
+          <div className="hc-tags">
+            <Tag tone={state.tone}>{state.label}</Tag>
+            <Tag tone="violet" dot={false}>Season {t.season || DASH}</Tag>
+          </div>
+        </div>
+        <Ring value={pct} max={100} size={112} stroke={11} from={critical ? '#ff8a4c' : '#2ee6a6'} to={critical ? '#ff5d7a' : '#35e0ff'}>
+          <b>{pct}%</b><small>Ready</small>
+        </Ring>
       </div>
 
-      <div className="grid g3">
-        <div className="stat"><b>{teams.length}</b><span>Teams</span></div>
-        <div className="stat"><b>{players.length}</b><span>Players</span></div>
-        <div className="stat"><b>{t.total_purse}</b><span>Credits / team</span></div>
-        <div className="stat"><b>{t.max_squad}</b><span>Squad size</span></div>
-        <div className="stat"><b>{baseTotal}</b><span>Total base value</span></div>
-        <div className="stat"><b>{t.timer_seconds}s</b><span>Player timer</span></div>
+      <div className="grid g-stats page-sec">
+        <Stat icon="shield" tone="violet" label="Teams" value={teams.length} />
+        <Stat icon="user" tone="gold" label="Players" value={players.length} />
+        <Stat icon="wallet" tone="mint" label="Credits / team" value={t.total_purse} />
+        <Stat icon="users" tone="cyan" label="Squad size" value={t.max_squad} />
+        <Stat icon="chart" tone="coral" label="Total base value" value={baseTotal} />
+        <Stat icon="clock" tone="violet" label="Player timer" value={t.timer_seconds} suffix="s" />
       </div>
 
-      <div className="card">
-        <h3>Readiness checklist · {pct}%</h3>
-        <div className="progress"><i style={{ width: pct + '%' }} /></div>
-        <div style={{ marginTop: 8 }}>
+      {firstBad ? (
+        <div className="next-cta page-sec">
+          <div><b>Next step</b><span>{firstBad[1]}</span></div>
+          <button className="btn sm" onClick={() => go(firstBad[2])}>Fix <Icon name="right" size={16} stroke={2.4} /></button>
+        </div>
+      ) : (
+        <div className="next-cta page-sec">
+          <div><b>Everything is ready</b><span>Prepare the category rounds, then start the auction.</span></div>
+          <button className="btn sm" onClick={() => go('rounds')}>Rounds <Icon name="right" size={16} stroke={2.4} /></button>
+        </div>
+      )}
+
+      <div className="cols-2 page-sec">
+        <div className="surface">
+          <div className="sec-h"><span className="sec-ic mint"><Icon name="checkc" size={22} /></span><div><h3>Readiness checklist</h3><p>{okCount} of {checks.length} checks passed</p></div></div>
           {checks.map(([ok, text, tab, crit], i) => (
             <div className="check-row" key={i}>
-              <span className="ic">{ok ? '✅' : crit ? '❌' : '⚠️'}</span>
-              <div style={{ flex: 1, fontSize: 14 }}>{text}</div>
-              {!ok && <button className="btn small ghost" onClick={() => go(tab)}>Fix</button>}
+              <span className={'ck-ic ' + (ok ? 'ok' : crit ? 'bad' : 'warn')}><Icon name={ok ? 'check' : crit ? 'x' : 'alert'} size={17} stroke={2.4} /></span>
+              <div className="grow" style={{ fontSize: 14, lineHeight: 1.35 }}>{text}</div>
+              {!ok && <button className="btn soft sm" onClick={() => go(tab)}>Fix</button>}
             </div>
           ))}
         </div>
-      </div>
 
-      <div className="card">
-        <h3>Players by category</h3>
-        {cats.map((c) => {
-          const n = players.filter((p) => p.category_id === c.id).length
-          const target = teams.length * c.min_per_team
-          return (
-            <div className="check-row" key={c.id}>
-              <div style={{ flex: 1 }}>{c.name}</div>
-              <b>{n}</b>
-              {target > 0 && <span className={'badge ' + (n >= target ? 'ok' : 'warn')}>min needed {target}</span>}
+        <div className="surface">
+          <div className="sec-h"><span className="sec-ic violet"><Icon name="chart" size={22} /></span><div><h3>Players by category</h3><p>{players.length} registered</p></div></div>
+          <div className="cat-donut">
+            <Donut size={150} stroke={18} segments={perCat.map((x) => ({ value: x.n, color: x.color, label: x.c.name }))}>
+              <b>{players.length}</b><small>Players</small>
+            </Donut>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <Legend items={perCat.map((x) => ({ label: x.c.name, value: x.n, color: x.color }))} />
             </div>
-          )
-        })}
+          </div>
+          <div style={{ marginTop: 20 }}>
+            <Bars items={perCat.map((x) => {
+              const target = teams.length * x.c.min_per_team
+              return { label: x.c.name, value: x.n, color: x.color, display: target > 0 ? `${x.n} ${DOT} need ${target}` : x.n }
+            })} />
+          </div>
+        </div>
       </div>
-
-      <p className="sub">Next module: Live Auction Screen & Team Logins (after you confirm this module works).</p>
-    </div>
+    </>
   )
 }
